@@ -1,4 +1,3 @@
-!pip install python-telegram-bot
 
 import os
 import asyncio

@@ -39,49 +39,11 @@ user_data_db = {}
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
-# Базовый URL репозитория GitHub с фото
+# GitHub репозиторий
 GITHUB_REPO_URL = "https://raw.githubusercontent.com/syakimmm/vavilon/main/"
 
-# Ссылки на фото в GitHub репозитории
-PHOTO_URLS = {
-    'about1': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
-    'about2': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
-    'requirements1': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
-    'requirements2': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg"
-}
-
-async def download_photo(url: str) -> BytesIO:
-    """Загрузка фото из GitHub"""
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return BytesIO(response.content)
-    except Exception as e:
-        logger.error(f"Ошибка загрузки фото: {e}")
-        raise
-
-async def send_photo_album(chat_id: int, photo_keys: list, caption: str = "", context: CallbackContext = None):
-    """Отправка альбома фото из GitHub"""
-    try:
-        media_group = []
-        for i, key in enumerate(photo_keys):
-            photo = await download_photo(PHOTO_URLS[key])
-            media_group.append(InputMediaPhoto(
-                media=photo,
-                caption=caption if i == 0 else ""
-            ))
-
-        await context.bot.send_media_group(
-            chat_id=chat_id,
-            media=media_group
-        )
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка отправки фото: {e}")
-        return False
-
+# Меню бота
 async def start(update: Update, context: CallbackContext) -> None:
-    """Главное меню"""
     keyboard = [
         [InlineKeyboardButton("📝 Записаться", callback_data="signup")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
@@ -107,80 +69,140 @@ async def start(update: Update, context: CallbackContext) -> None:
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-async def about(update: Update, context: CallbackContext) -> None:
-    """Информация о студии с фото из GitHub"""
+# Обработчики для всех кнопок
+async def button_handler(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    success = await send_photo_album(
-        chat_id=query.message.chat_id,
-        photo_keys=['about1', 'about2'],
-        caption="🌟 О нашей студии:\n\nПрофессиональные педагоги\nПросторные залы\n10 лет опыта",
-        context=context
+    handlers = {
+        'about': about_handler,
+        'requirements': requirements_handler,
+        'program': program_handler,
+        'location': location_handler,
+        'contacts': contacts_handler,
+        'help': help_handler,
+        'signup': signup_handler,
+        'back_to_menu': back_to_menu_handler
+    }
+
+    handler = handlers.get(query.data)
+    if handler:
+        await handler(update, context)
+
+async def about_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    try:
+        await send_github_photo(
+            update,
+            context,
+            "166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+            "🌟 О нашей студии:\nПрофессиональные педагоги с 10-летним опытом"
+        )
+    except Exception as e:
+        await query.edit_message_text(f"⚠️ Ошибка: {str(e)}")
+    finally:
+        await show_back_button(update, context)
+
+async def requirements_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    try:
+        await send_github_photo(
+            update,
+            context,
+            "166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+            "🎒 Что взять с собой:\n• Форму для танцев\n• Чешки/балетки\n• Бутылку воды"
+        )
+    except Exception as e:
+        await query.edit_message_text(f"⚠️ Ошибка: {str(e)}")
+    finally:
+        await show_back_button(update, context)
+
+async def program_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.edit_message_text(
+        "📅 Программа занятий:\n\n1. Разминка (15 мин)\n2. Основная часть (40 мин)\n3. Растяжка (15 мин)",
+        reply_markup=back_to_menu_keyboard()
     )
 
-    if not success:
-        await query.edit_message_text("⚠️ Не удалось загрузить информацию о студии.")
-
-    # Кнопка возврата
-    await context.bot.send_message(
+async def location_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await context.bot.send_location(
         chat_id=query.message.chat_id,
-        text="Что вас интересует?",
+        latitude=56.468238,
+        longitude=84.948214
+    )
+    await query.edit_message_text(
+        "📍 Наш адрес:\nг. Томск, ул. Иркутский тракт, 86/1\nДом культуры «Маяк»",
+        reply_markup=back_to_menu_keyboard()
+    )
+
+async def contacts_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.edit_message_text(
+        "📞 Наши контакты:\n\nТелефон: +7 (913) 880-84-58\nEmail: info@studio.ru",
+        reply_markup=back_to_menu_keyboard()
+    )
+
+async def help_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.edit_message_text(
+        "🆘 Помощь:\n\nЕсли бот не отвечает:\n1. Проверьте соединение\n2. Попробуйте позже\n3. Напишите нам",
+        reply_markup=back_to_menu_keyboard()
+    )
+
+async def signup_handler(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.edit_message_text(
+        "📝 Запись на занятие:\n\nВыберите дату:",
         reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Понедельник", callback_data="date_mon")],
+            [InlineKeyboardButton("Среда", callback_data="date_wed")],
+            [InlineKeyboardButton("Пятница", callback_data="date_fri")],
             [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
         ])
     )
 
-async def requirements(update: Update, context: CallbackContext) -> None:
-    """Что взять на занятия с фото из GitHub"""
-    query = update.callback_query
-    await query.answer()
-
-    success = await send_photo_album(
-        chat_id=query.message.chat_id,
-        photo_keys=['requirements1', 'requirements2'],
-        caption="🎒 Что взять с собой:\n\n• Форму для танцев\n• Чешки/балетки\n• Бутылку воды",
-        context=context
-    )
-
-    if not success:
-        await query.edit_message_text("⚠️ Не удалось загрузить информацию о требованиях.")
-
-    # Кнопка возврата
-    await context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text="Нужна дополнительная информация?",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
-        ])
-    )
-
-async def back_to_menu(update: Update, context: CallbackContext) -> None:
-    """Возврат в главное меню"""
-    query = update.callback_query
-    await query.answer()
+async def back_to_menu_handler(update: Update, context: CallbackContext) -> None:
     await start(update, context)
 
+# Вспомогательные функции
+async def send_github_photo(update: Update, context: CallbackContext, filename: str, caption: str = ""):
+    """Отправка фото из GitHub"""
+    photo_url = f"{GITHUB_REPO_URL}{filename}"
+    try:
+        response = requests.get(photo_url, timeout=10)
+        response.raise_for_status()
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=BytesIO(response.content),
+            caption=caption
+        )
+    except Exception as e:
+        logger.error(f"Ошибка отправки фото: {e}")
+        raise
+
+async def show_back_button(update: Update, context: CallbackContext):
+    """Показывает кнопку возврата"""
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Выберите действие:",
+        reply_markup=back_to_menu_keyboard()
+    )
+
+def back_to_menu_keyboard():
+    """Клавиатура для возврата в меню"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ В меню", callback_data="back_to_menu")]
+    ])
+
 def main() -> None:
-    """Запуск бота"""
     application = Application.builder().token(TOKEN).build()
 
     # Регистрация обработчиков
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(CallbackQueryHandler(about, pattern='^about$'))
-    application.add_handler(CallbackQueryHandler(requirements, pattern='^requirements$'))
-    application.add_handler(CallbackQueryHandler(back_to_menu, pattern='^back_to_menu$'))
+    application.add_handler(CallbackQueryHandler(button_handler))
 
-    # Запуск бота
     application.run_polling()
 
 if __name__ == '__main__':
-    # Проверка доступности фото при старте
-    try:
-        for url in PHOTO_URLS.values():
-            requests.head(url, timeout=5)
-        logger.info("Все фото доступны")
-    except Exception as e:
-        logger.warning(f"Проблема с доступом к фото: {e}")
-
     main()

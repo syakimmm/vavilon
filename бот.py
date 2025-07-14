@@ -9,6 +9,8 @@ Original file is located at
 
 import os
 import logging
+import requests
+from io import BytesIO  # Добавьте этот импорт
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
     Application,

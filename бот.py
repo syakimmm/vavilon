@@ -37,21 +37,53 @@ user_data_db = {}
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
-# Ссылки на фото (замените на реальные URL)
+# Базовый URL репозитория GitHub с фото
+GITHUB_REPO_URL = "https://raw.githubusercontent.com/syakimmm/vavilon/main/"
+
+# Ссылки на фото в GitHub репозитории
 PHOTO_URLS = {
-    'about1': 'https://drive.google.com/file/d/1Q6WHhZdCim3lNTT85mr8FzKUc1bEPH3D/view?usp=sharing',
-    'about2': 'https://drive.google.com/file/d/1Q6WHhZdCim3lNTT85mr8FzKUc1bEPH3D/view?usp=sharing',
-    'requirements1': 'https://drive.google.com/file/d/1Q6WHhZdCim3lNTT85mr8FzKUc1bEPH3D/view?usp=sharing',
-    'requirements2': 'https://drive.google.com/file/d/1Q6WHhZdCim3lNTT85mr8FzKUc1bEPH3D/view?usp=sharing'
+    'about1': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+    'about2': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+    'requirements1': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+    'requirements2': f"https://raw.githubusercontent.com/syakimmm/vavilon/main/166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg"
 }
 
-# ========== ГЛАВНОЕ МЕНЮ ==========
+async def download_photo(url: str) -> BytesIO:
+    """Загрузка фото из GitHub"""
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return BytesIO(response.content)
+    except Exception as e:
+        logger.error(f"Ошибка загрузки фото: {e}")
+        raise
+
+async def send_photo_album(chat_id: int, photo_keys: list, caption: str = "", context: CallbackContext = None):
+    """Отправка альбома фото из GitHub"""
+    try:
+        media_group = []
+        for i, key in enumerate(photo_keys):
+            photo = await download_photo(PHOTO_URLS[key])
+            media_group.append(InputMediaPhoto(
+                media=photo,
+                caption=caption if i == 0 else ""
+            ))
+
+        await context.bot.send_media_group(
+            chat_id=chat_id,
+            media=media_group
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка отправки фото: {e}")
+        return False
 
 async def start(update: Update, context: CallbackContext) -> None:
+    """Главное меню"""
     keyboard = [
         [InlineKeyboardButton("📝 Записаться", callback_data="signup")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
-        [InlineKeyboardButton("🎒 Что взять на наборы", callback_data="requirements")],
+        [InlineKeyboardButton("🎒 Что взять", callback_data="requirements")],
         [InlineKeyboardButton("🆘 Помощь", callback_data="help")],
         [
             InlineKeyboardButton("📅 Программа", callback_data="program"),
@@ -62,260 +94,91 @@ async def start(update: Update, context: CallbackContext) -> None:
 
     if update.message:
         await update.message.reply_text(
-            "Привет! Я бот для записи на занятия. 🩰\n"
-            "Выберите действие:",
+            "Привет! Я бот для записи на занятия. 🩰\nВыберите действие:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
         query = update.callback_query
         await query.answer()
         await query.edit_message_text(
-            "Привет! Я бот для записи на занятия. 🩰\n"
-            "Выберите действие:",
+            "Главное меню:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-# ========== ОБРАБОТЧИКИ КНОПОК ==========
-
 async def about(update: Update, context: CallbackContext) -> None:
+    """Информация о студии с фото из GitHub"""
     query = update.callback_query
     await query.answer()
 
-    media_group = [
-        InputMediaPhoto(media=PHOTO_URLS['about1']),
-        InputMediaPhoto(media=PHOTO_URLS['about2'])
-    ]
-
-    await context.bot.send_media_group(
+    success = await send_photo_album(
         chat_id=query.message.chat_id,
-        media=media_group
+        photo_keys=['about1', 'about2'],
+        caption="🌟 О нашей студии:\n\nПрофессиональные педагоги\nПросторные залы\n10 лет опыта",
+        context=context
     )
 
+    if not success:
+        await query.edit_message_text("⚠️ Не удалось загрузить информацию о студии.")
+
+    # Кнопка возврата
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text="🌟 О нашей студии:\n\n"
-        "Мы - профессиональная танцевальная студия с 10-летним опытом работы. "
-        "Наши педагоги - дипломированные специалисты с победами в международных конкурсах."
+        text="Что вас интересует?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+        ])
     )
 
 async def requirements(update: Update, context: CallbackContext) -> None:
+    """Что взять на занятия с фото из GitHub"""
     query = update.callback_query
     await query.answer()
 
-    media_group = [
-        InputMediaPhoto(media=PHOTO_URLS['requirements1']),
-        InputMediaPhoto(media=PHOTO_URLS['requirements2'])
-    ]
-
-    await context.bot.send_media_group(
+    success = await send_photo_album(
         chat_id=query.message.chat_id,
-        media=media_group
+        photo_keys=['requirements1', 'requirements2'],
+        caption="🎒 Что взять с собой:\n\n• Форму для танцев\n• Чешки/балетки\n• Бутылку воды",
+        context=context
     )
 
+    if not success:
+        await query.edit_message_text("⚠️ Не удалось загрузить информацию о требованиях.")
+
+    # Кнопка возврата
     await context.bot.send_message(
         chat_id=query.message.chat_id,
-        text="🎒 Что взять с собой на первое занятие:\n\n"
-        "• Удобную спортивную одежду\n"
-        "• Чешки или балетки\n"
-        "• Бутылку воды"
-    )
-
-async def help_command(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    await query.edit_message_text(
-        "🆘 Помощь:\n\n"
-        "Если бот не работает:\n"
-        "1. Проверьте историю сообщений\n"
-        "2. Используйте /cancel для сброса\n"
-        "3. Свяжитесь с администратором\n\n"
-        "Для записи нажмите кнопку ниже:",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 Записаться", callback_data="signup")]
-        ])
-    )
-
-async def program(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    await query.edit_message_text(
-        "🎭 Программа занятий:\n\n"
-        "1. Разминка (15 мин)\n"
-        "2. Основная часть (40 мин)\n"
-        "3. Растяжка (15 мин)",
+        text="Нужна дополнительная информация?",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
         ])
     )
-
-async def location(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    await context.bot.send_location(
-        chat_id=query.message.chat_id,
-        latitude=56.468238,
-        longitude=84.948214
-    )
-
-    await query.edit_message_text(
-        "📍 Адрес:\n\n"
-        "г. Томск, ул. Иркутский тракт, 86/1\n"
-        "Дом культуры «Маяк»",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
-        ])
-    )
-
-async def contacts(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    await query.edit_message_text(
-        "📞 Контакты:\n\n"
-        "Руководитель:\n"
-        "Плотникова Марина Николаевна\n"
-        "+7 (913) 880-84-58\n\n"
-        "Администратор:\n"
-        "Юлия: +7 (983) 236-42-84",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
-        ])
-    )
-
-# ========== ЗАПИСЬ НА ЗАНЯТИЕ ==========
-
-async def signup(update: Update, context: CallbackContext) -> int:
-    query = update.callback_query
-    await query.answer()
-
-    keyboard = [
-        [InlineKeyboardButton("📅 22.05.2025 в 11:00", callback_data="date_2025-05-22_11:00")],
-        [InlineKeyboardButton("📅 25.05.2025 в 14:00", callback_data="date_2025-05-25_14:00")],
-        [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
-    ]
-
-    await query.edit_message_text(
-        "Выберите дату и время для записи:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-    return DATE
-
-async def date_choice(update: Update, context: CallbackContext) -> int:
-    query = update.callback_query
-    await query.answer()
-    date, time = query.data.split('_')[1], query.data.split('_')[2]
-    context.user_data['date'] = f"{date} {time}"
-    await query.edit_message_text(f"Выбрано: {date} {time}\nВведите телефон:")
-    return PHONE
-
-async def phone_input(update: Update, context: CallbackContext) -> int:
-    context.user_data['phone'] = update.message.text
-    await update.message.reply_text("Имя родителя:")
-    return PARENT_NAME
-
-async def parent_name_input(update: Update, context: CallbackContext) -> int:
-    context.user_data['parent_name'] = update.message.text
-    await update.message.reply_text("Имя ребенка:")
-    return GIRL_NAME
-
-async def girl_name_input(update: Update, context: CallbackContext) -> int:
-    context.user_data['girl_name'] = update.message.text
-    await update.message.reply_text("Возраст ребенка:")
-    return AGE
-
-async def age_input(update: Update, context: CallbackContext) -> int:
-    context.user_data['age'] = update.message.text
-    await update.message.reply_text("Предыдущий опыт:")
-    return EXPERIENCE
-
-async def experience_input(update: Update, context: CallbackContext) -> int:
-    context.user_data['experience'] = update.message.text
-    await update.message.reply_text("Откуда узнали о нас?")
-    return SOURCE
-
-async def source_input(update: Update, context: CallbackContext) -> int:
-    context.user_data['source'] = update.message.text
-    user_id = update.message.from_user.id
-
-    user_data_db[user_id] = context.user_data
-
-    await context.bot.send_message(
-        chat_id=ADMIN_CHAT_ID,
-        text=f"Новая запись:\n{context.user_data}"
-    )
-
-    await update.message.reply_text(
-        "✅ Запись оформлена!\n"
-        f"Дата: {context.user_data['date']}\n"
-        "Ждем вас!"
-    )
-    return ConversationHandler.END
-
-async def my_lesson(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
-    if record := user_data_db.get(user_id):
-        await update.message.reply_text(
-            f"Ваша запись:\n"
-            f"📅 {record['date']}\n"
-            f"👧 {record['girl_name']}, {record['age']} лет"
-        )
-    else:
-        await update.message.reply_text("❌ Вы не записаны")
-
-async def cancel_lesson(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
-    if user_id in user_data_db:
-        del user_data_db[user_id]
-        await update.message.reply_text("❌ Запись отменена")
-    else:
-        await update.message.reply_text("Нет активных записей")
-
-async def cancel_conversation(update: Update, context: CallbackContext) -> int:
-    await update.message.reply_text("Регистрация отменена")
-    return ConversationHandler.END
 
 async def back_to_menu(update: Update, context: CallbackContext) -> None:
+    """Возврат в главное меню"""
+    query = update.callback_query
+    await query.answer()
     await start(update, context)
 
-# ========== ЗАПУСК БОТА ==========
-
 def main() -> None:
+    """Запуск бота"""
     application = Application.builder().token(TOKEN).build()
 
-    # ConversationHandler для записи
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(signup, pattern='^signup$')],
-        states={
-            DATE: [CallbackQueryHandler(date_choice, pattern='^date_')],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_input)],
-            PARENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, parent_name_input)],
-            GIRL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, girl_name_input)],
-            AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, age_input)],
-            EXPERIENCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, experience_input)],
-            SOURCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, source_input)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel_conversation)],
-    )
-
     # Регистрация обработчиков
-    application.add_handler(conv_handler)
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('my_lesson', my_lesson))
-    application.add_handler(CommandHandler('cancel', cancel_lesson))
-
-    # Обработчики кнопок
     application.add_handler(CallbackQueryHandler(about, pattern='^about$'))
     application.add_handler(CallbackQueryHandler(requirements, pattern='^requirements$'))
-    application.add_handler(CallbackQueryHandler(help_command, pattern='^help$'))
-    application.add_handler(CallbackQueryHandler(program, pattern='^program$'))
-    application.add_handler(CallbackQueryHandler(location, pattern='^location$'))
-    application.add_handler(CallbackQueryHandler(contacts, pattern='^contacts$'))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern='^back_to_menu$'))
 
+    # Запуск бота
     application.run_polling()
 
 if __name__ == '__main__':
+    # Проверка доступности фото при старте
+    try:
+        for url in PHOTO_URLS.values():
+            requests.head(url, timeout=5)
+        logger.info("Все фото доступны")
+    except Exception as e:
+        logger.warning(f"Проблема с доступом к фото: {e}")
+
     main()

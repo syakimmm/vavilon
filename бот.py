@@ -36,6 +36,7 @@ DATE, PHONE, PARENT_NAME, GIRL_NAME, AGE, EXPERIENCE, SOURCE = range(7)
 
 # База данных
 user_data_db = {}
+location_messages = {}  # Для хранения ID сообщений с картой
 
 # Загрузка переменных окружения
 TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -96,6 +97,19 @@ async def send_photo_album(update: Update, context: CallbackContext, album_name:
 
 async def start(update: Update, context: CallbackContext) -> None:
     """Главное меню"""
+    # Удаляем предыдущую карту при возврате в меню
+    if update.callback_query:
+        user_id = update.callback_query.from_user.id
+        if user_id in location_messages:
+            try:
+                await context.bot.delete_message(
+                    chat_id=update.callback_query.message.chat_id,
+                    message_id=location_messages[user_id]
+                )
+                del location_messages[user_id]
+            except Exception as e:
+                logger.error(f"Ошибка удаления карты: {e}")
+
     keyboard = [
         [InlineKeyboardButton("📝 Записаться", callback_data="signup")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
@@ -146,11 +160,15 @@ async def location(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    await context.bot.send_location(
+    # Отправляем карту и сохраняем ID сообщения
+    message = await context.bot.send_location(
         chat_id=query.message.chat_id,
         latitude=LOCATION_COORDINATES[0],
         longitude=LOCATION_COORDINATES[1]
     )
+
+    # Сохраняем ID сообщения с картой
+    location_messages[query.from_user.id] = message.message_id
 
     await query.edit_message_text(
         "📍 Наш адрес:\nг. Томск, ул. Иркутский тракт, 86/1\nДом культуры «Маяк»",
@@ -184,8 +202,8 @@ async def signup(update: Update, context: CallbackContext) -> int:
     date2 = today + timedelta(days=random.randint(5, 7))
 
     context.user_data['dates'] = [
-        date1.strftime("25.08.2025 в 17:00"),
-        date2.strftime("28.08.2025 в 18:30")
+        date1.strftime("%d.%m.%Y в 17:00"),
+        date2.strftime("%d.%m.%Y в 18:30")
     ]
 
     keyboard = [

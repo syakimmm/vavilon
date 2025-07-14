@@ -9,8 +9,10 @@ Original file is located at
 
 import os
 import logging
+import random
 import requests
-from io import BytesIO  # Добавьте этот импорт
+from io import BytesIO
+from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
     Application,
@@ -39,26 +41,72 @@ user_data_db = {}
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
+# Координаты места проведения
+LOCATION_COORDINATES = (56.50849, 85.02575)  # Широта, долгота
+
 # GitHub репозиторий
 GITHUB_REPO_URL = "https://raw.githubusercontent.com/syakimmm/vavilon/main/"
 
-# Меню бота
+## Фотографии для разделов
+PHOTO_ALBUMS = {
+    'about': [
+        f"{GITHUB_REPO_URL}166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+        f"{GITHUB_REPO_URL}166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+        f"{GITHUB_REPO_URL}166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg"
+    ],
+    'info': [
+        f"{GITHUB_REPO_URL}166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
+        f"{GITHUB_REPO_URL}166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg"
+    ]
+}
+
+async def download_photo(url: str) -> BytesIO:
+    """Загрузка фото из GitHub"""
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return BytesIO(response.content)
+    except Exception as e:
+        logger.error(f"Ошибка загрузки фото: {e}")
+        raise
+
+async def send_photo_album(update: Update, context: CallbackContext, album_name: str, caption: str):
+    """Отправка альбома фотографий"""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        media_group = []
+        for i, url in enumerate(PHOTO_ALBUMS[album_name]):
+            photo = await download_photo(url)
+            media_group.append(InputMediaPhoto(
+                media=photo,
+                caption=caption if i == 0 else ""
+            ))
+
+        await context.bot.send_media_group(
+            chat_id=query.message.chat_id,
+            media=media_group
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка отправки фото: {e}")
+        await query.edit_message_text("⚠️ Не удалось загрузить фотографии")
+        return False
+
 async def start(update: Update, context: CallbackContext) -> None:
+    """Главное меню"""
     keyboard = [
         [InlineKeyboardButton("📝 Записаться", callback_data="signup")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
-        [InlineKeyboardButton("🎒 Что взять", callback_data="requirements")],
-        [InlineKeyboardButton("🆘 Помощь", callback_data="help")],
-        [
-            InlineKeyboardButton("📅 Программа", callback_data="program"),
-            InlineKeyboardButton("📍 Адрес", callback_data="location")
-        ],
+        [InlineKeyboardButton("📌 Всё что нужно знать о наборах", callback_data="info")],
+        [InlineKeyboardButton("📍 Адрес", callback_data="location")],
         [InlineKeyboardButton("📞 Контакты", callback_data="contacts")]
     ]
 
     if update.message:
         await update.message.reply_text(
-            "Привет! Я бот для записи на занятия. 🩰\nВыберите действие:",
+            "Добро пожаловать! 🩰\nВыберите действие:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     else:
@@ -69,120 +117,221 @@ async def start(update: Update, context: CallbackContext) -> None:
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-# Обработчики для всех кнопок
-async def button_handler(update: Update, context: CallbackContext) -> None:
+async def about(update: Update, context: CallbackContext) -> None:
+    """Информация о студии с фотоальбомом"""
+    success = await send_photo_album(
+        update, context, 'about',
+        "🌟 О нашей студии:\n\nПрофессиональные педагоги\nПросторные залы\n10 лет опыта"
+    )
+
+    if success:
+        await show_back_button(update, context)
+
+async def info(update: Update, context: CallbackContext) -> None:
+    """Информация о наборах с фотоальбомом"""
+    success = await send_photo_album(
+        update, context, 'info',
+        "📌 Всё что нужно знать о наборах:\n\n"
+        "• Форма одежды: удобная спортивная\n"
+        "• Обувь: чешки или балетки\n"
+        "• При себе иметь: бутылку воды\n"
+        "• Первое занятие бесплатно"
+    )
+
+    if success:
+        await show_back_button(update, context)
+
+async def location(update: Update, context: CallbackContext) -> None:
+    """Адрес студии с картой"""
     query = update.callback_query
     await query.answer()
 
-    handlers = {
-        'about': about_handler,
-        'requirements': requirements_handler,
-        'program': program_handler,
-        'location': location_handler,
-        'contacts': contacts_handler,
-        'help': help_handler,
-        'signup': signup_handler,
-        'back_to_menu': back_to_menu_handler
-    }
-
-    handler = handlers.get(query.data)
-    if handler:
-        await handler(update, context)
-
-async def about_handler(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    try:
-        await send_github_photo(
-            update,
-            context,
-            "166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
-            "🌟 О нашей студии:\nПрофессиональные педагоги с 10-летним опытом"
-        )
-    except Exception as e:
-        await query.edit_message_text(f"⚠️ Ошибка: {str(e)}")
-    finally:
-        await show_back_button(update, context)
-
-async def requirements_handler(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    try:
-        await send_github_photo(
-            update,
-            context,
-            "166979-chelovek_pauk_net_dorogi_domoj-chelovek_pauk-kinovselennaya_marvel-studiya_marvel-mir-3840x2160.jpg",
-            "🎒 Что взять с собой:\n• Форму для танцев\n• Чешки/балетки\n• Бутылку воды"
-        )
-    except Exception as e:
-        await query.edit_message_text(f"⚠️ Ошибка: {str(e)}")
-    finally:
-        await show_back_button(update, context)
-
-async def program_handler(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.edit_message_text(
-        "📅 Программа занятий:\n\n1. Разминка (15 мин)\n2. Основная часть (40 мин)\n3. Растяжка (15 мин)",
-        reply_markup=back_to_menu_keyboard()
-    )
-
-async def location_handler(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
     await context.bot.send_location(
         chat_id=query.message.chat_id,
-        latitude=56.468238,
-        longitude=84.948214
+        latitude=LOCATION_COORDINATES[0],
+        longitude=LOCATION_COORDINATES[1]
     )
+
     await query.edit_message_text(
         "📍 Наш адрес:\nг. Томск, ул. Иркутский тракт, 86/1\nДом культуры «Маяк»",
         reply_markup=back_to_menu_keyboard()
     )
 
-async def contacts_handler(update: Update, context: CallbackContext) -> None:
+async def contacts(update: Update, context: CallbackContext) -> None:
+    """Контакты"""
     query = update.callback_query
+    await query.answer()
+
     await query.edit_message_text(
-        "📞 Наши контакты:\n\nТелефон: +7 (913) 880-84-58\nEmail: info@studio.ru",
+        "📞 Наши контакты:\n\n"
+        "Руководитель: Марина Николаевна\n"
+        "Телефон: +7 (913) 880-84-58\n"
+        "Юлия\n"
+        "Телефон: +7 (983) 236-42-84",
         reply_markup=back_to_menu_keyboard()
     )
 
-async def help_handler(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.edit_message_text(
-        "🆘 Помощь:\n\nЕсли бот не отвечает:\n1. Проверьте соединение\n2. Попробуйте позже\n3. Напишите нам",
-        reply_markup=back_to_menu_keyboard()
-    )
+# ========== ЦЕПОЧКА РЕГИСТРАЦИИ ==========
 
-async def signup_handler(update: Update, context: CallbackContext) -> None:
+async def signup(update: Update, context: CallbackContext) -> int:
+    """Начало записи - выбор даты"""
     query = update.callback_query
+    await query.answer()
+
+    # Генерация двух случайных дат
+    today = datetime.now()
+    date1 = today + timedelta(days=random.randint(2, 4))
+    date2 = today + timedelta(days=random.randint(5, 7))
+
+    context.user_data['dates'] = [
+        date1.strftime("25.08.2025 в 17:00"),
+        date2.strftime("28.08.2025 в 18:30")
+    ]
+
+    keyboard = [
+        [InlineKeyboardButton(context.user_data['dates'][0], callback_data="date_0")],
+        [InlineKeyboardButton(context.user_data['dates'][1], callback_data="date_1")],
+        [InlineKeyboardButton("❌ Отменить запись", callback_data="cancel")]
+    ]
+
     await query.edit_message_text(
-        "📝 Запись на занятие:\n\nВыберите дату:",
+        "Выберите дату и время пробного занятия:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return DATE
+
+async def date_choice(update: Update, context: CallbackContext) -> int:
+    """Обработка выбора даты"""
+    query = update.callback_query
+    await query.answer()
+
+    date_index = int(query.data.split('_')[1])
+    context.user_data['date'] = context.user_data['dates'][date_index]
+
+    await query.edit_message_text(
+        f"Выбрано: {context.user_data['date']}\n\n"
+        "Введите ваш номер телефона для связи:",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Понедельник", callback_data="date_mon")],
-            [InlineKeyboardButton("Среда", callback_data="date_wed")],
-            [InlineKeyboardButton("Пятница", callback_data="date_fri")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_menu")]
+            [InlineKeyboardButton("❌ Отменить", callback_data="cancel")]
         ])
     )
+    return PHONE
 
-async def back_to_menu_handler(update: Update, context: CallbackContext) -> None:
+async def phone_input(update: Update, context: CallbackContext) -> int:
+    """Ввод телефона"""
+    context.user_data['phone'] = update.message.text
+    await update.message.reply_text(
+        "Введите ваше имя (родителя):",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Отменить", callback_data="cancel")]
+        ])
+    )
+    return PARENT_NAME
+
+async def parent_name_input(update: Update, context: CallbackContext) -> int:
+    """Ввод имени родителя"""
+    context.user_data['parent_name'] = update.message.text
+    await update.message.reply_text(
+        "Введите имя ребенка:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Отменить", callback_data="cancel")]
+        ])
+    )
+    return GIRL_NAME
+
+async def girl_name_input(update: Update, context: CallbackContext) -> int:
+    """Ввод имени ребенка"""
+    context.user_data['girl_name'] = update.message.text
+    await update.message.reply_text(
+        "Сколько лет ребенку?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Отменить", callback_data="cancel")]
+        ])
+    )
+    return AGE
+
+async def age_input(update: Update, context: CallbackContext) -> int:
+    """Ввод возраста"""
+    context.user_data['age'] = update.message.text
+    await update.message.reply_text(
+        "Чем раньше занимались? (Опыт занятий):",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Отменить", callback_data="cancel")]
+        ])
+    )
+    return EXPERIENCE
+
+async def experience_input(update: Update, context: CallbackContext) -> int:
+    """Ввод опыта"""
+    context.user_data['experience'] = update.message.text
+    await update.message.reply_text(
+        "Откуда узнали о нас?",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Отменить", callback_data="cancel")]
+        ])
+    )
+    return SOURCE
+
+async def source_input(update: Update, context: CallbackContext) -> int:
+    """Завершение регистрации"""
+    context.user_data['source'] = update.message.text
+    user_id = update.message.from_user.id
+
+    # Сохраняем данные
+    user_data_db[user_id] = context.user_data
+
+    # Формируем сообщение для администратора
+    admin_message = (
+        "✨ Новая запись на пробное занятие!\n\n"
+        f"📅 Дата: {context.user_data['date']}\n"
+        f"👤 Родитель: {context.user_data['parent_name']}\n"
+        f"📞 Телефон: {context.user_data['phone']}\n"
+        f"👧 Ребенок: {context.user_data['girl_name']} ({context.user_data['age']} лет)\n"
+        f"🎓 Опыт: {context.user_data['experience']}\n"
+        f"🔍 Откуда узнали: {context.user_data['source']}\n"
+        f"🆔 ID: {user_id}"
+    )
+
+    # Отправляем администратору
+    await context.bot.send_message(
+        chat_id=ADMIN_CHAT_ID,
+        text=admin_message
+    )
+
+    # Сообщение пользователю
+    await update.message.reply_text(
+        "✅ Запись оформлена!\n\n"
+        f"Мы ждем вас {context.user_data['date']}\n"
+        f"По адресу: г. Томск, ул. Иркутский тракт, 86/1\n\n"
+        "Если у вас есть вопросы, звоните: +7 (913) 880-84-58",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏠 В меню", callback_data="back")]
+        ])
+    )
+    return ConversationHandler.END
+
+async def cancel_lesson(update: Update, context: CallbackContext) -> None:
+    """Отмена записи"""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    if user_id in user_data_db:
+        # Уведомляем администратора
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=f"❌ Запись отменена пользователем {user_id}\n"
+                 f"Данные: {user_data_db[user_id]}"
+        )
+        del user_data_db[user_id]
+        await query.edit_message_text("❌ Запись отменена")
+    else:
+        await query.edit_message_text("У вас нет активных записей")
+
     await start(update, context)
 
-# Вспомогательные функции
-async def send_github_photo(update: Update, context: CallbackContext, filename: str, caption: str = ""):
-    """Отправка фото из GitHub"""
-    photo_url = f"{GITHUB_REPO_URL}{filename}"
-    try:
-        response = requests.get(photo_url, timeout=10)
-        response.raise_for_status()
-        await context.bot.send_photo(
-            chat_id=update.effective_chat.id,
-            photo=BytesIO(response.content),
-            caption=caption
-        )
-    except Exception as e:
-        logger.error(f"Ошибка отправки фото: {e}")
-        raise
-
 async def show_back_button(update: Update, context: CallbackContext):
-    """Показывает кнопку возврата"""
+    """Показывает кнопку возврата после альбома"""
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text="Выберите действие:",
@@ -192,15 +341,43 @@ async def show_back_button(update: Update, context: CallbackContext):
 def back_to_menu_keyboard():
     """Клавиатура для возврата в меню"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ В меню", callback_data="back_to_menu")]
+        [InlineKeyboardButton("◀️ В меню", callback_data="back")]
     ])
 
+async def back_to_menu(update: Update, context: CallbackContext) -> None:
+    """Возврат в главное меню"""
+    await start(update, context)
+
 def main() -> None:
+    """Запуск бота"""
     application = Application.builder().token(TOKEN).build()
 
+    # ConversationHandler для записи
+    conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(signup, pattern='^signup$')],
+        states={
+            DATE: [CallbackQueryHandler(date_choice, pattern='^date_')],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_input)],
+            PARENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, parent_name_input)],
+            GIRL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, girl_name_input)],
+            AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, age_input)],
+            EXPERIENCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, experience_input)],
+            SOURCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, source_input)],
+        },
+        fallbacks=[
+            CallbackQueryHandler(cancel_lesson, pattern='^cancel$'),
+            CallbackQueryHandler(back_to_menu, pattern='^back$')
+        ],
+    )
+
     # Регистрация обработчиков
+    application.add_handler(conv_handler)
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(CallbackQueryHandler(about, pattern='^about$'))
+    application.add_handler(CallbackQueryHandler(info, pattern='^info$'))
+    application.add_handler(CallbackQueryHandler(location, pattern='^location$'))
+    application.add_handler(CallbackQueryHandler(contacts, pattern='^contacts$'))
+    application.add_handler(CallbackQueryHandler(back_to_menu, pattern='^back$'))
 
     application.run_polling()
 

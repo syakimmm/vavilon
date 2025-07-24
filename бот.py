@@ -1,8 +1,6 @@
+import os  
 import logging
-import random
-import requests
-from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
     Application,

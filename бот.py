@@ -1,7 +1,7 @@
 import os
 import logging
 import requests
-from io import BytesIO  # Добавьте этот импорт
+from io import BytesIO
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
@@ -13,7 +13,6 @@ from telegram.ext import (
     CallbackQueryHandler,
     ConversationHandler,
 )
-
 
 # Настройка логирования
 logging.basicConfig(
@@ -283,19 +282,15 @@ async def source_input(update: Update, context: CallbackContext) -> int:
     )
     await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=admin_message)
 
-    # Сообщение пользователю с кнопкой отмены
+    # Сообщение пользователю без кнопки отмены
     await update.message.reply_text(
         "✅ Запись оформлена!\n\n"
         f"Мы ждем вас {context.user_data['date']}\n"
         f"По адресу: г. Томск, ул. Иркутский тракт, 86/1\n\n"
         "Если у вас есть вопросы, звоните: +7 (913) 880-84-58 - Руководитель Плотникова Марина Николаевна или +7 (983) 236-42-84 - Юлия",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ Отменить запись", callback_data="cancel")],
-            [InlineKeyboardButton("🏠 В меню", callback_data="back")]
-        ])
+        reply_markup=back_to_menu_keyboard()
     )
     return ConversationHandler.END
-
 
 async def about(update: Update, context: CallbackContext) -> None:
     """Информация о студии с фотоальбомом"""
@@ -322,8 +317,7 @@ async def about(update: Update, context: CallbackContext) -> None:
     if not success:
         await update.message.reply_text(about_text)
     
-    if success:
-        await show_back_button(update, context)
+    await show_back_button(update, context)
 
 async def info(update: Update, context: CallbackContext) -> None:
     """Информация о наборах с фотоальбомом"""
@@ -348,6 +342,8 @@ async def info(update: Update, context: CallbackContext) -> None:
     
     if not success:
         await update.message.reply_text(info_text)
+    
+    await show_back_button(update, context)
 
 async def location(update: Update, context: CallbackContext) -> None:
     """Адрес студии с картой"""

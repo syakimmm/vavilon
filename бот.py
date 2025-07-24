@@ -1,5 +1,7 @@
-import os  
+import os
 import logging
+import requests
+from io import BytesIO  # Добавьте этот импорт
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
@@ -11,6 +13,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ConversationHandler,
 )
+
 
 # Настройка логирования
 logging.basicConfig(

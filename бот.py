@@ -50,26 +50,29 @@ PHOTO_ALBUMS = {
 }
 
 async def download_photo(url: str) -> BytesIO:
-    """Загрузка фото из GitHub"""
+    """Загрузка фото из URL"""
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         return BytesIO(response.content)
     except Exception as e:
         logger.error(f"Ошибка загрузки фото: {e}")
-        raise
+        return None
 
 async def send_photo_album(update: Update, context: CallbackContext, album_name: str, caption: str):
-    """Отправка альбома фотографий с fallback на текст"""
+    """Отправка альбома фотографий"""
     try:
         query = update.callback_query
         await query.answer()
         
         media_group = []
-        for url in PHOTO_URLS.get(album_name, []):
+        for url in PHOTO_ALBUMS.get(album_name, []):
             photo = await download_photo(url)
             if photo:
-                media_group.append(InputMediaPhoto(media=photo, caption=caption if not media_group else ""))
+                media_group.append(InputMediaPhoto(
+                    media=photo,
+                    caption=caption if not media_group else ""
+                ))
         
         if media_group:
             await context.bot.send_media_group(
@@ -86,6 +89,14 @@ async def send_photo_album(update: Update, context: CallbackContext, album_name:
     else:
         await update.message.reply_text(caption)
     return False
+
+async def show_back_button(update: Update, context: CallbackContext):
+    """Показывает кнопку возврата после альбома"""
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Выберите действие:",
+        reply_markup=back_to_menu_keyboard()
+    )
 
 async def start(update: Update, context: CallbackContext) -> None:
     """Главное меню"""
@@ -122,6 +133,7 @@ async def start(update: Update, context: CallbackContext) -> None:
             "Главное меню:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
 async def my_lesson(update: Update, context: CallbackContext) -> None:
     """Просмотр текущей записи"""
     query = update.callback_query
@@ -284,23 +296,6 @@ async def source_input(update: Update, context: CallbackContext) -> int:
     )
     return ConversationHandler.END
 
-async def cancel_lesson(update: Update, context: CallbackContext) -> None:
-    """Отмена записи"""
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.from_user.id
-    if user_id in user_data_db:
-        await context.bot.send_message(
-            chat_id=ADMIN_CHAT_ID,
-            text=f"❌ Запись отменена пользователем {user_id}"
-        )
-        del user_data_db[user_id]
-        await query.edit_message_text("❌ Ваша запись отменена")
-    else:
-        await query.edit_message_text("У вас нет активных записей")
-
-    await start(update, context)
 
 async def about(update: Update, context: CallbackContext) -> None:
     """Информация о студии с фотоальбомом"""
@@ -417,12 +412,13 @@ def main() -> None:
     # Регистрация обработчиков
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CallbackQueryHandler(my_lesson, pattern='^my_lesson$'))
+    application.add_handler(CallbackQueryHandler(cancel_my_lesson, pattern='^cancel_my_lesson$'))
     application.add_handler(CallbackQueryHandler(about, pattern='^about$'))
     application.add_handler(CallbackQueryHandler(info, pattern='^info$'))
     application.add_handler(CallbackQueryHandler(location, pattern='^location$'))
     application.add_handler(CallbackQueryHandler(contacts, pattern='^contacts$'))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern='^back$'))
-    application.add_handler(CallbackQueryHandler(cancel_lesson, pattern='^cancel$'))
 
     application.run_polling()
 

@@ -60,28 +60,32 @@ async def download_photo(url: str) -> BytesIO:
         raise
 
 async def send_photo_album(update: Update, context: CallbackContext, album_name: str, caption: str):
-    """Отправка альбома фотографий"""
-    query = update.callback_query
-    await query.answer()
-
+    """Отправка альбома фотографий с fallback на текст"""
     try:
+        query = update.callback_query
+        await query.answer()
+        
         media_group = []
-        for i, url in enumerate(PHOTO_ALBUMS[album_name]):
+        for url in PHOTO_URLS.get(album_name, []):
             photo = await download_photo(url)
-            media_group.append(InputMediaPhoto(
-                media=photo,
-                caption=caption if i == 0 else ""
-            ))
-
-        await context.bot.send_media_group(
-            chat_id=query.message.chat_id,
-            media=media_group
-        )
-        return True
+            if photo:
+                media_group.append(InputMediaPhoto(media=photo, caption=caption if not media_group else ""))
+        
+        if media_group:
+            await context.bot.send_media_group(
+                chat_id=query.message.chat_id,
+                media=media_group
+            )
+            return True
     except Exception as e:
         logger.error(f"Ошибка отправки фото: {e}")
-        await query.edit_message_text("⚠️ Не удалось загрузить фотографии")
-        return False
+    
+    # Fallback - отправляем только текст если фото не загрузились
+    if update.callback_query:
+        await update.callback_query.edit_message_text(caption)
+    else:
+        await update.message.reply_text(caption)
+    return False
 
 async def start(update: Update, context: CallbackContext) -> None:
     """Главное меню"""
@@ -99,6 +103,7 @@ async def start(update: Update, context: CallbackContext) -> None:
 
     keyboard = [
         [InlineKeyboardButton("📝 Записаться", callback_data="signup")],
+        [InlineKeyboardButton("📋 Моя запись", callback_data="my_lesson")],
         [InlineKeyboardButton("ℹ️ О нас", callback_data="about")],
         [InlineKeyboardButton("📌 Информация о наборах", callback_data="info")],
         [InlineKeyboardButton("📍 Адрес", callback_data="location")],
@@ -116,6 +121,67 @@ async def start(update: Update, context: CallbackContext) -> None:
         await query.edit_message_text(
             "Главное меню:",
             reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+async def my_lesson(update: Update, context: CallbackContext) -> None:
+    """Просмотр текущей записи"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    if user_id in user_data_db:
+        record = user_data_db[user_id]
+        keyboard = [
+            [InlineKeyboardButton("❌ Отменить запись", callback_data="cancel_my_lesson")],
+            [InlineKeyboardButton("◀️ В меню", callback_data="back")]
+        ]
+        await query.edit_message_text(
+            f"📋 Ваша запись:\n\n"
+            f"📅 Дата: {record['date']}\n"
+            f"👤 Родитель: {record['parent_name']}\n"
+            f"📞 Телефон: {record['phone']}\n"
+            f"👧 Ребенок: {record['girl_name']} ({record['age']} лет)\n"
+            f"🎓 Опыт: {record['experience']}\n"
+            f"🔍 Откуда узнали: {record['source']}",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        keyboard = [
+            [InlineKeyboardButton("📝 Записаться", callback_data="signup")],
+            [InlineKeyboardButton("◀️ В меню", callback_data="back")]
+        ]
+        await query.edit_message_text(
+            "❌ У вас нет активных записей.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+async def cancel_my_lesson(update: Update, context: CallbackContext) -> None:
+    """Отмена текущей записи"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    if user_id in user_data_db:
+        # Уведомление администратору
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=f"❌ Запись отменена пользователем {user_id}\n"
+                 f"Дата: {user_data_db[user_id]['date']}\n"
+                 f"Родитель: {user_data_db[user_id]['parent_name']}\n"
+                 f"Телефон: {user_data_db[user_id]['phone']}"
+        )
+        
+        del user_data_db[user_id]
+        await query.edit_message_text(
+            "✅ Ваша запись успешно отменена.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📝 Записаться", callback_data="signup")],
+                [InlineKeyboardButton("◀️ В меню", callback_data="back")]
+            ])
+        )
+    else:
+        await query.edit_message_text(
+            "❌ У вас нет активных записей для отмены.",
+            reply_markup=back_to_menu_keyboard()
         )
 
 async def signup(update: Update, context: CallbackContext) -> int:
@@ -194,7 +260,7 @@ async def source_input(update: Update, context: CallbackContext) -> int:
 
     # Уведомление администратору
     admin_message = (
-        "✨ Новая запись на пробное занятие!\n\n"
+        "✨ Новая запись!\n\n"
         f"📅 Дата: {context.user_data['date']}\n"
         f"👤 Родитель: {context.user_data['parent_name']}\n"
         f"📞 Телефон: {context.user_data['phone']}\n"
@@ -210,7 +276,7 @@ async def source_input(update: Update, context: CallbackContext) -> int:
         "✅ Запись оформлена!\n\n"
         f"Мы ждем вас {context.user_data['date']}\n"
         f"По адресу: г. Томск, ул. Иркутский тракт, 86/1\n\n"
-        "Если у вас есть вопросы, звоните: +7 (913) 880-84-58 или +7 (983) 236-42-84",
+        "Если у вас есть вопросы, звоните: +7 (913) 880-84-58 - Руководитель Плотникова Марина Николаевна или +7 (983) 236-42-84 - Юлия",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("❌ Отменить запись", callback_data="cancel")],
             [InlineKeyboardButton("🏠 В меню", callback_data="back")]

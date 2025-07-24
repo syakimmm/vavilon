@@ -317,6 +317,7 @@ async def about(update: Update, context: CallbackContext) -> None:
     if not success:
         await update.message.reply_text(about_text)
     
+    # Всегда показываем кнопку возврата в меню
     await show_back_button(update, context)
 
 async def info(update: Update, context: CallbackContext) -> None:

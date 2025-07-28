@@ -207,9 +207,10 @@ async def signup(update: Update, context: CallbackContext) -> int:
         "30.08.2025 с 11:00 до 13:00"
     ]
 
+    # Создаем кнопки для всех дат
     keyboard = [
-        [InlineKeyboardButton(context.user_data['dates'][0], callback_data="date_0")],
-        [InlineKeyboardButton(context.user_data['dates'][1], callback_data="date_1")]
+        [InlineKeyboardButton(date, callback_data=f"date_{i}")] 
+        for i, date in enumerate(context.user_data['dates'])
     ]
 
     await query.edit_message_text(
